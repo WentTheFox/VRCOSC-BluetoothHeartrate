@@ -8,6 +8,7 @@ namespace BluetoothHeartrateModule
 {
     [ModuleTitle("Bluetooth Heartrate")]
     [ModuleDescription("Displays heartrate data from Bluetooth-based heartrate sensors")]
+    [ModuleInfo("https://github.com/WentTheFox/VRCOSC-BluetoothHeartrate")]
     public partial class BluetoothHeartrateModule : HeartrateModule<BluetoothHeartrateProvider>
     {
         private readonly WebsocketHeartrateServer _wsServer;
