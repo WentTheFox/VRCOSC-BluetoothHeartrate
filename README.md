@@ -36,7 +36,7 @@ If everything went well, you should see the following log messages:
 > \[Bluetooth Heartrate]: Connection successful<br>
 > \[Bluetooth Heartrate]: Stopped scanning for devices
 
-[Releases]: https://github.com/DJDavid98/VRCOSC-BluetoothHeartrate/releases
+[Releases]: https://github.com/WentTheFox/VRCOSC-BluetoothHeartrate/releases
 
 #### Advanced usage
 

@@ -30,7 +30,6 @@
                 Grid.Row="2"
                 ItemsSource="{Binding Devices}"
                 FontSize="16"
-                LostMouseCapture="DeviceSelection_LostMouseCapture"
                 SelectionChanged="DeviceSelection_OnSelectionChanged"
                 IsReadOnly="{Binding DeviceReadOnly}"
                 IsEditable="{Binding DeviceEditable}"

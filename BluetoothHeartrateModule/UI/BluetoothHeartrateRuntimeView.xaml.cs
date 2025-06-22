@@ -143,10 +143,6 @@ namespace BluetoothHeartrateModule.UI
             Module.ClearDeviceMacSetting();
         }
 
-        private void DeviceSelection_LostMouseCapture(object sender, MouseEventArgs e)
-        {
-
-        }
 
         private void OnLoad(object sender, RoutedEventArgs e)
         {
