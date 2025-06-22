@@ -30,6 +30,15 @@ namespace BluetoothHeartrateModule
 
         private DeviceDataManager _mgr;
 
+        static DeviceData()
+        {
+            // Freeze all static brushes to make them thread-safe
+            ConnectedBrush.Freeze();
+            ProcessingBrush.Freeze();
+            ScanningBrush.Freeze();
+            DefaultBrush.Freeze();
+            DefaultLightBrush.Freeze();
+        }
 
         public string Label
         {
@@ -60,10 +69,6 @@ namespace BluetoothHeartrateModule
             var macPrefix = MacAddress != string.Empty ? MacAddress.Substring(0, 8) : "";
             this.Manufacturer = this._mgr.PrefixData.ContainsKey(macPrefix) ? this._mgr.PrefixData[macPrefix] : string.Empty;
             this.ShowManufacturer = this.Manufacturer != string.Empty;
-
-            ConnectedBrush.Freeze();
-            ProcessingBrush.Freeze();
-            DefaultBrush.Freeze();
         }
 
         public double GetSecondsSinceLastAdvertisement()
@@ -86,11 +91,13 @@ namespace BluetoothHeartrateModule
             }
 
             double fadeProgress = Math.Min(1f, GetSecondsSinceLastAdvertisement() / InactiveAfterSeconds);
-            StatusColor = new SolidColorBrush(Color.FromRgb(
+            var newBrush = new SolidColorBrush(Color.FromRgb(
                 Convert.ToByte(128 * fadeProgress),
                 Convert.ToByte(128 * fadeProgress),
                 Convert.ToByte(255 - (128 * fadeProgress))
             ));
+            newBrush.Freeze();
+            StatusColor = newBrush;
         }
 
         private bool GetIsConnected()
