@@ -85,15 +85,26 @@ namespace BluetoothHeartrateModule
             return data;
         }
 
-        private DeviceData Create(string mac)
+        private DeviceData? Create(string mac)
         {
             var data = new DeviceData(mac, this);
-            _devices[mac] = data;
+            try
+            {
+                _devices[mac] = data;
+            }
+            catch (IndexOutOfRangeException e)
+            {
+                _module.Log($"Could not create device with mac {mac}: {e.Message}");
+                return null;
+            }
+
             return data;
         }
-        internal DeviceData Add(string advertisementMac, string deviceName)
+        internal DeviceData? Add(string advertisementMac, string deviceName)
         {
             var deviceData = Create(advertisementMac);
+            if (deviceData == null) return null;
+            
             deviceData.Name = deviceName;
 
             Refresh();

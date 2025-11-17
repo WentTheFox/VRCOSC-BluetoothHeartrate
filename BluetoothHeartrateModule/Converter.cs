@@ -6,7 +6,9 @@ namespace BluetoothHeartrateModule
     {
         internal static string FormatAsMac(ulong deviceMac)
         {
-            return BitConverter.ToString(BitConverter.GetBytes(deviceMac).Reverse().ToArray(), 2, 6).Replace('-', ':');
+            var bits = BitConverter.GetBytes(deviceMac);
+            Array.Reverse(bits);
+            return BitConverter.ToString(bits, 2, 6).Replace('-', ':');
         }
 
         internal static int[] ToDigitArray(int num, int totalWidth)
