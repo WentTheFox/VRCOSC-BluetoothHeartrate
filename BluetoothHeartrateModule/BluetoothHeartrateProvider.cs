@@ -81,7 +81,20 @@ namespace BluetoothHeartrateModule
         }
 
 
-            private async void Watcher_Received(BluetoothLEAdvertisementWatcher sender, BluetoothLEAdvertisementReceivedEventArgs args)
+        // async void handlers rethrow on the thread pool, which would crash the host app, so nothing may escape from here
+        private async void Watcher_Received(BluetoothLEAdvertisementWatcher sender, BluetoothLEAdvertisementReceivedEventArgs args)
+        {
+            try
+            {
+                await HandleAdvertisement(args);
+            }
+            catch (Exception ex)
+            {
+                module.LogException($"Unhandled error while processing advertisement from {Converter.FormatAsMac(args.BluetoothAddress)}", ex);
+            }
+        }
+
+        private async Task HandleAdvertisement(BluetoothLEAdvertisementReceivedEventArgs args)
         {
             _ddm.UpdateBluetoothAvailability(true);
             var advertisementMac = Converter.FormatAsMac(args.BluetoothAddress);
@@ -162,8 +175,16 @@ namespace BluetoothHeartrateModule
                         module.LogDebug($"{logPrefix} Current device already set");
                     }
 
+                    // CurrentDevice can be reset concurrently, so work from a local reference
+                    var currentDevice = _ddm.CurrentDevice;
+                    if (currentDevice == null)
+                    {
+                        module.LogDebug($"{logPrefix} Current device was reset while processing, skipping");
+                        return;
+                    }
+
                     var missingCharacteristicUnknown = !_ddm.MissingCharacteristicDevices.Contains(deviceMacSetting);
-                    cleanupServices = await FindHeartrateCharacteristic(_ddm.CurrentDevice, advertisementMac, logPrefix, deviceMacSetting, missingCharacteristicUnknown);
+                    cleanupServices = await FindHeartrateCharacteristic(currentDevice, advertisementMac, logPrefix, deviceMacSetting, missingCharacteristicUnknown);
 
                     if (_ddm.HeartRateCharacteristic == null && missingCharacteristicUnknown)
                     {
@@ -172,23 +193,38 @@ namespace BluetoothHeartrateModule
                 }
                 catch (Exception ex)
                 {
-                    module.LogDebug($"{logPrefix} Failed to connect: {ex.Message}");
+                    module.LogException($"{logPrefix} Failed to connect", ex);
                     module.ResetDeviceData();
                 }
                 finally
                 {
-                    if (cleanupServices != null && cleanupServices.Any())
+                    try
                     {
-                        foreach (var service in cleanupServices)
-                            service.Dispose();
+                        if (cleanupServices != null)
+                        {
+                            foreach (var service in cleanupServices.ToList())
+                            {
+                                try
+                                {
+                                    service.Dispose();
+                                }
+                                catch (Exception ex)
+                                {
+                                    module.LogException($"{logPrefix} Failed to dispose of GATT service", ex);
+                                }
+                            }
+                        }
+                        if (_ddm.ConnectedDeviceMac == string.Empty)
+                        {
+                            _ddm.UpdateConnestionStatus(DeviceDataManager.PossibleConnectionStates.Scanning);
+                        }
                     }
-                    if (_ddm.ConnectedDeviceMac == string.Empty)
+                    finally
                     {
-                        _ddm.UpdateConnestionStatus(DeviceDataManager.PossibleConnectionStates.Scanning);
+                        _ddm.ProcessingDeviceMac = string.Empty;
+                        _ddm.Refresh();
+                        module.LogDebug($"{logPrefix} Stopped processing advertisement");
                     }
-                    _ddm.ProcessingDeviceMac = string.Empty;
-                    _ddm.Refresh();
-                    module.LogDebug($"{logPrefix} Stopped processing advertisement");
                 }
 
             }
@@ -258,7 +294,17 @@ namespace BluetoothHeartrateModule
             }
             double waitTimeMilliseconds = Math.Pow(2, _scanAttempts) * 100;
             module.LogDebug($"Waiting for {waitTimeMilliseconds / 1e3d}s before scanning again…");
-            Task.Delay(TimeSpan.FromMilliseconds(waitTimeMilliseconds)).ContinueWith(_ => StartWatcher());
+            Task.Delay(TimeSpan.FromMilliseconds(waitTimeMilliseconds)).ContinueWith(async _ =>
+            {
+                try
+                {
+                    await StartWatcher();
+                }
+                catch (Exception ex)
+                {
+                    module.LogException("Failed to restart watcher after disconnect", ex);
+                }
+            });
         }
 
         private void HandleHeartRateCharacteristicValueChange(byte updateData)

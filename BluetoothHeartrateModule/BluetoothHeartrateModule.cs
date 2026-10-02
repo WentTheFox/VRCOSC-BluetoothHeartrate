@@ -90,6 +90,8 @@ namespace BluetoothHeartrateModule
         protected override async Task<bool> OnModuleStart()
         {
             LogDebug("Starting module");
+            AppDomain.CurrentDomain.UnhandledException += LogUnhandledException;
+            TaskScheduler.UnobservedTaskException += LogUnobservedTaskException;
             CreateWatcher();
             LogDebug("Call base class OnModuleStart");
             await base.OnModuleStart();
@@ -112,6 +114,8 @@ namespace BluetoothHeartrateModule
                 LogDebug("Stopping wsServer");
                 _wsServer.Stop();
             }
+            AppDomain.CurrentDomain.UnhandledException -= LogUnhandledException;
+            TaskScheduler.UnobservedTaskException -= LogUnobservedTaskException;
             return true;
         }
 
@@ -156,32 +160,79 @@ namespace BluetoothHeartrateModule
 
         public void ResetCurrentDevice()
         {
-            if (DeviceDataManager.CurrentDevice != null)
+            // Atomically take ownership of the device, as this can be called concurrently
+            // from advertisement handlers, disconnect handling and teardown
+            var device = Interlocked.Exchange(ref DeviceDataManager.CurrentDevice, null);
+            if (device == null)
             {
-                LogDebug("Resetting currentDevice");
-                try
-                {
-                    LogDebug("Disposing of currentDevice");
-                    DeviceDataManager.CurrentDevice.Dispose();
-                }
-                catch (ObjectDisposedException)
-                {
-                    // Ignore if object is already disposed
-                    LogDebug("currentDevice already disposed");
-                }
-                DeviceDataManager.CurrentDevice = null;
+                return;
+            }
+
+            LogDebug("Resetting currentDevice");
+            try
+            {
+                LogDebug("Disposing of currentDevice");
+                device.Dispose();
                 LogDebug("currentDevice has been reset");
+            }
+            catch (ObjectDisposedException)
+            {
+                // Ignore if object is already disposed
+                LogDebug("currentDevice already disposed");
+            }
+            catch (Exception ex)
+            {
+                LogException("Failed to dispose of currentDevice", ex);
             }
         }
 
         public void ResetDeviceData()
         {
             LogDebug("Resetting device data");
-            DeviceDataManager.ResetHeartRateService();
-            DeviceDataManager.ResetHeartRateCharacteristic();
-            ResetCurrentDevice();
-            DeviceDataManager.ResetMissingCharacterisicsDevices();
+            RunResetStep("reset heart rate service", DeviceDataManager.ResetHeartRateService);
+            RunResetStep("reset heart rate characteristic", DeviceDataManager.ResetHeartRateCharacteristic);
+            RunResetStep("reset current device", ResetCurrentDevice);
+            RunResetStep("reset missing characteristic devices", DeviceDataManager.ResetMissingCharacterisicsDevices);
             LogDebug("Device data has been reset");
+        }
+
+        // Each step is isolated so a failure in one doesn't skip the others, or escape into the host app
+        private void RunResetStep(string description, Action step)
+        {
+            try
+            {
+                step();
+            }
+            catch (Exception ex)
+            {
+                LogException($"Failed to {description}", ex);
+            }
+        }
+
+        internal void LogException(string context, Exception ex)
+        {
+            Log($"[ERROR] {context}: {ex.GetType().FullName}: {ex.Message}{Environment.NewLine}{ex.StackTrace}");
+            if (ex.InnerException != null)
+            {
+                Log($"[ERROR] Inner exception: {ex.InnerException.GetType().FullName}: {ex.InnerException.Message}{Environment.NewLine}{ex.InnerException.StackTrace}");
+            }
+        }
+
+        private void LogUnhandledException(object? sender, UnhandledExceptionEventArgs e)
+        {
+            if (e.ExceptionObject is Exception ex)
+            {
+                LogException($"Unhandled exception (terminating: {e.IsTerminating})", ex);
+            }
+            else
+            {
+                Log($"[ERROR] Unhandled non-exception object (terminating: {e.IsTerminating}): {e.ExceptionObject}");
+            }
+        }
+
+        private void LogUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+        {
+            LogException("Unobserved task exception", e.Exception);
         }
 
 
@@ -193,7 +244,14 @@ namespace BluetoothHeartrateModule
                 return;
             }
 
-            await _wsServer.SendIntMessage(heartrate);
+            try
+            {
+                await _wsServer.SendIntMessage(heartrate);
+            }
+            catch (Exception ex)
+            {
+                LogException("Failed to send heartrate to websocket", ex);
+            }
         }
         internal BluetoothLEAdvertisementWatcher CreateWatcher()
         {
