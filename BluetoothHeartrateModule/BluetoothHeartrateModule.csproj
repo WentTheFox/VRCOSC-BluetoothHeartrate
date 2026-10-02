@@ -53,7 +53,7 @@
 	  <Folder Include="Properties\" />
 	</ItemGroup>
 
-	<Target Name="PostBuild" AfterTargets="PostBuildEvent">
+	<Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="'$(CI)' != 'true'">
 		<Exec Command="xcopy /Q /S /R /F /Y /I &quot;$(TargetDir)$(TargetName).dll&quot; &quot;%25appdata%25\VRCOSC\packages\local\&quot;" />
 	</Target>
 
