@@ -6,10 +6,12 @@
 		<Nullable>enable</Nullable>
 		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
 		<LangVersion>latestmajor</LangVersion>
-		<WindowsSdkPackageVersion>10.0.26100.56</WindowsSdkPackageVersion>
-		<Version>2.0.23.0</Version>
-		<AssemblyVersion>2.0.23.0</AssemblyVersion>
-		<FileVersion>2.0.23.0</FileVersion>
+		<WindowsSdkPackageVersion>10.0.26100.1</WindowsSdkPackageVersion>
+		<!-- The VRCOSC host ships Microsoft.Windows.SDK.NET 10.0.26100.24, a newer projection assembly cannot be loaded at runtime -->
+		<MvvmToolkitEnableWindowsSdkPackageVersionValidation>false</MvvmToolkitEnableWindowsSdkPackageVersionValidation>
+		<Version>2.0.24.0</Version>
+		<AssemblyVersion>2.0.24.0</AssemblyVersion>
+		<FileVersion>2.0.24.0</FileVersion>
 		<Authors>WentTheFox</Authors>
 		<Product>Bluetooth Heartrate</Product>
 		<ApplicationIcon>logo\logo.ico</ApplicationIcon>
