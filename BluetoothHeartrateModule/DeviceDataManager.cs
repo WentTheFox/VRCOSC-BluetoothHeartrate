@@ -10,7 +10,7 @@ namespace BluetoothHeartrateModule
 {
     public class DeviceDataManager
     {
-        Dictionary<string, DeviceData> _devices = new();
+        System.Collections.Concurrent.ConcurrentDictionary<string, DeviceData> _devices = new();
 
         BluetoothHeartrateModule _module;
         DeviceNameResolver _dnr;
@@ -40,7 +40,7 @@ namespace BluetoothHeartrateModule
         public Action? OnBluetoothAvailabilityChange { get; internal set; }
         public Action? OnConnectionStatusChange { get; internal set; }
 
-        private Dictionary<ulong, bool> _processingAdvertisementMap = new();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, bool> _processingAdvertisementMap = new();
         internal Dictionary<string, string> PrefixData = new();
 
         public DeviceDataManager(BluetoothHeartrateModule module) {
@@ -113,9 +113,8 @@ namespace BluetoothHeartrateModule
 
         internal async Task<DeviceData?> Add(ulong bluetoothAddress, BluetoothLEAdvertisement advertisement, CancellationTokenSource cancelToken)
         {
-            if (_processingAdvertisementMap.ContainsKey(bluetoothAddress)) { return null; }
+            if (!_processingAdvertisementMap.TryAdd(bluetoothAddress, true)) { return null; }
 
-            _processingAdvertisementMap.Add(bluetoothAddress, true);
             try
             {
                 var advertisementMac = Converter.FormatAsMac(bluetoothAddress);
@@ -131,12 +130,12 @@ namespace BluetoothHeartrateModule
             }
             finally
             {
-                _processingAdvertisementMap.Remove(bluetoothAddress);
+                _processingAdvertisementMap.TryRemove(bluetoothAddress, out _);
             }
         }
 
         public DeviceData? Get(string mac) {
-            return _devices.ContainsKey(mac) ? _devices[mac] : null;
+            return _devices.TryGetValue(mac, out var device) ? device : null;
         }
 
         public bool Has(string mac) {
@@ -145,7 +144,7 @@ namespace BluetoothHeartrateModule
 
         public void Remove(string mac)
         {
-            _devices.Remove(mac);
+            _devices.TryRemove(mac, out _);
             Refresh();
         }
         public void Refresh()
@@ -282,13 +281,29 @@ namespace BluetoothHeartrateModule
 
         private void HeartRateCharacteristic_ValueChanged(GattCharacteristic sender, GattValueChangedEventArgs args)
         {
-            _module.LogDebug("HeartRateCharacteristic_ValueChanged");
-            var data = new byte[args.CharacteristicValue.Length];
-            DataReader.FromBuffer(args.CharacteristicValue).ReadBytes(data);
+            // Runs on a WinRT thread, so nothing may escape from here or the host app crashes
+            try
+            {
+                _module.LogDebug("HeartRateCharacteristic_ValueChanged");
+                var data = new byte[args.CharacteristicValue.Length];
+                DataReader.FromBuffer(args.CharacteristicValue).ReadBytes(data);
 
-            var updateData = data[1];
-            _module.LogDebug($"Invoking OnHeartrateUpdate action with data {updateData}");
-            OnHeartRateCharacteristicValueChange?.Invoke(updateData);
+                if (data.Length < 2)
+                {
+                    _module.LogDebug($"Ignoring malformed heart rate measurement ({data.Length} bytes)");
+                    return;
+                }
+
+                // Bit 0 of the flags byte selects a 16-bit value format
+                var updateValue = (data[0] & 0x01) != 0 && data.Length >= 3 ? data[1] | (data[2] << 8) : data[1];
+                var updateData = (byte)Math.Min(updateValue, byte.MaxValue);
+                _module.LogDebug($"Invoking OnHeartrateUpdate action with data {updateData}");
+                OnHeartRateCharacteristicValueChange?.Invoke(updateData);
+            }
+            catch (Exception ex)
+            {
+                _module.LogException("Failed to process heart rate value change", ex);
+            }
         }
 
         internal void RegiterConnectionStatusChangeHandler(string logPrefix)
@@ -302,11 +317,18 @@ namespace BluetoothHeartrateModule
 
         private void Device_ConnectionStatusChanged(BluetoothLEDevice sender, object args)
         {
-            _module.LogDebug($"Device connection status changed to {sender.ConnectionStatus}");
-            if (sender.ConnectionStatus == BluetoothConnectionStatus.Disconnected)
+            try
             {
-                OnDisconnected?.Invoke();
-                Refresh();
+                _module.LogDebug($"Device connection status changed to {sender.ConnectionStatus}");
+                if (sender.ConnectionStatus == BluetoothConnectionStatus.Disconnected)
+                {
+                    OnDisconnected?.Invoke();
+                    Refresh();
+                }
+            }
+            catch (Exception ex)
+            {
+                _module.LogException("Failed to handle device connection status change", ex);
             }
         }
     }

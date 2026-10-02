@@ -41,8 +41,18 @@ namespace BluetoothHeartrateModule
             if (_httpListener == null)
             {
                 _module.LogDebug("Creating HTTP listener");
-                _httpListener = new HttpListener();
-                _httpListener.Prefixes.Add(httpAddress);
+                var newListener = new HttpListener();
+                try
+                {
+                    newListener.Prefixes.Add(httpAddress);
+                }
+                catch (ArgumentException ex)
+                {
+                    // Host or port settings are free-form text and may not form a valid prefix
+                    _module.Log($"Invalid WebSocket server address {httpAddress}: {ex.Message}");
+                    return;
+                }
+                _httpListener = newListener;
             }
             if (!_httpListener.IsListening)
             {
@@ -69,13 +79,22 @@ namespace BluetoothHeartrateModule
                     if (context.Request.IsWebSocketRequest)
                     {
                         _module.LogDebug("Accepting WebSocket request");
-                        var webSocketContext = await context.AcceptWebSocketAsync(null);
-                        var clientId = Guid.NewGuid();
-                        _module.LogDebug("Storing connected client");
-                        ConnectedClients.TryAdd(clientId, webSocketContext.WebSocket);
-                        _module.Log($"Websocket client {clientId} connected.");
+                        try
+                        {
+                            var webSocketContext = await context.AcceptWebSocketAsync(null);
+                            var clientId = Guid.NewGuid();
+                            _module.LogDebug("Storing connected client");
+                            ConnectedClients.TryAdd(clientId, webSocketContext.WebSocket);
+                            _module.Log($"Websocket client {clientId} connected.");
 
-                        _ = HandleWebSocketConnection(clientId, webSocketContext.WebSocket);
+                            _ = HandleWebSocketConnection(clientId, webSocketContext.WebSocket);
+                        }
+                        catch (Exception ex) when (ex is WebSocketException || ex is HttpListenerException || ex is InvalidOperationException)
+                        {
+                            // A single failed handshake must not take the whole server down
+                            _module.Log($"Failed to accept WebSocket client: {ex.Message}");
+                            try { context.Response.Abort(); } catch { }
+                        }
                     }
                     else
                     {
@@ -84,7 +103,7 @@ namespace BluetoothHeartrateModule
                     }
                 }
             }
-            catch (Exception ex) when (ex is HttpListenerException || ex is OperationCanceledException)
+            catch (Exception ex) when (ex is HttpListenerException || ex is OperationCanceledException || ex is ObjectDisposedException)
             {
                 // Ignore exceptions caused by stopping the server
                 _module.LogDebug("Caught exception while stopping WebSocket server");
@@ -115,6 +134,9 @@ namespace BluetoothHeartrateModule
                 _module.LogDebug("Stopping HTTP listener");
                 _httpListener.Stop();
             }
+            // Drop the listener so a restart picks up changed host/port settings
+            _httpListener?.Close();
+            _httpListener = null;
         }
 
         // Public method to send an int message to all clients
@@ -173,8 +195,19 @@ namespace BluetoothHeartrateModule
             ConnectedClients.TryRemove(clientId, out WebSocket? removedClient);
             if (removedClient != null)
             {
-                await _ah.WaitAsyncVoid(removedClient.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None), AsyncTask.CloseWebsocketConnection);
-                removedClient.Dispose();
+                // async void: an exception escaping here (e.g. closing an already aborted socket) would crash the host
+                try
+                {
+                    await _ah.WaitAsyncVoid(removedClient.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None), AsyncTask.CloseWebsocketConnection);
+                }
+                catch (Exception ex)
+                {
+                    _module.LogDebug($"Failed to close client {clientId} cleanly: {ex.Message}");
+                }
+                finally
+                {
+                    removedClient.Dispose();
+                }
             }
             _module.Log($"WebSocket client {clientId} disconnected.");
         }
@@ -227,7 +260,14 @@ namespace BluetoothHeartrateModule
         {
             if (_serverCancellation == null) { return; }
 
-            await Task.Delay(-1, _serverCancellation.Token);
+            try
+            {
+                await Task.Delay(-1, _serverCancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
             Stop();
         }
     }

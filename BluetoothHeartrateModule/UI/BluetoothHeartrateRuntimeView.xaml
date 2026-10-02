@@ -4,7 +4,7 @@
     xmlns:xctk="http://schemas.xceed.com/wpf/xaml/toolkit"
     x:Class="BluetoothHeartrateModule.UI.BluetoothHeartrateRuntimeView"
 >
-    <StackPanel Orientation="Vertical" Loaded="OnLoad">
+    <StackPanel Orientation="Vertical" Loaded="OnLoad" Unloaded="OnUnload">
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
             <Image x:Name="BluetoothIcon" Width="32" Height="32" HorizontalAlignment="Left"/>
             <TextBlock

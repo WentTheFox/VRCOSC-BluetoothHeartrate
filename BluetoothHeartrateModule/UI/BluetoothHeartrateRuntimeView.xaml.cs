@@ -44,9 +44,10 @@ namespace BluetoothHeartrateModule.UI
                 var sortedDevices = new List<DeviceData>(updatedDevices);
                 sortedDevices.Sort((a, b) =>
                 {
-                    if (a.GetIsInactive()) { return 1; }
-                    if (b.GetIsInactive()) { return -1; }
-                    return a.Label.CompareTo(b.Label);
+                    // Must be a consistent ordering or List.Sort throws
+                    var inactiveCompare = a.GetIsInactive().CompareTo(b.GetIsInactive());
+                    if (inactiveCompare != 0) { return inactiveCompare; }
+                    return string.Compare(a.Label, b.Label, StringComparison.Ordinal);
                 });
                 bool selectedItemFound = false;
                 foreach (var deviceData in sortedDevices)
@@ -78,8 +79,15 @@ namespace BluetoothHeartrateModule.UI
                 }
                 var available = Module.DeviceDataManager.GetBluetoothAvailability();
                 var targetResource = available ? BluetoothOnImage : BluetoothOffImage;
-                var resourceUri = ResourceAccessor.Get($"img/{targetResource}.png");
-                BluetoothIcon.Source = new BitmapImage(resourceUri);
+                try
+                {
+                    var resourceUri = ResourceAccessor.Get($"img/{targetResource}.png");
+                    BluetoothIcon.Source = new BitmapImage(resourceUri);
+                }
+                catch (Exception ex)
+                {
+                    Module.LogException("Failed to load Bluetooth status icon", ex);
+                }
                 BluetoothAvailabilityTextBlock.Text = available ? BluetoothAvailableStatusText : BluetoothUnavailableStatusText;
             }));
         }
@@ -144,8 +152,23 @@ namespace BluetoothHeartrateModule.UI
         }
 
 
+        private void UnsubscribeHandlers()
+        {
+            this.Module.DeviceDataManager.OnDeviceListUpdate -= HandleDeviceListUpdate;
+            this.Module.DeviceDataManager.OnBluetoothAvailabilityChange -= HandleBluetoothAvailabilityChange;
+            this.Module.DeviceDataManager.OnConnectionStatusChange -= HandleConnectionStatusChange;
+        }
+
+        private void OnUnload(object sender, RoutedEventArgs e)
+        {
+            // Otherwise background threads keep dispatching into a dead view
+            UnsubscribeHandlers();
+        }
+
         private void OnLoad(object sender, RoutedEventArgs e)
         {
+            // Loaded can fire repeatedly (e.g. tab switches), so never stack handlers
+            UnsubscribeHandlers();
             this.Module.DeviceDataManager.OnDeviceListUpdate += HandleDeviceListUpdate;
             this.Module.DeviceDataManager.OnBluetoothAvailabilityChange += HandleBluetoothAvailabilityChange;
             this.Module.DeviceDataManager.OnConnectionStatusChange += HandleConnectionStatusChange;

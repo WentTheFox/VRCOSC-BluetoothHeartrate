@@ -66,7 +66,7 @@ namespace BluetoothHeartrateModule
             MacAddress = mac;
             IsVirtual = isVirtual;
 
-            var macPrefix = MacAddress != string.Empty ? MacAddress.Substring(0, 8) : "";
+            var macPrefix = MacAddress.Length >= 8 ? MacAddress.Substring(0, 8) : "";
             this.Manufacturer = this._mgr.PrefixData.ContainsKey(macPrefix) ? this._mgr.PrefixData[macPrefix] : string.Empty;
             this.ShowManufacturer = this.Manufacturer != string.Empty;
         }
@@ -80,7 +80,7 @@ namespace BluetoothHeartrateModule
 
         public bool GetIsInactive()
         {
-            return GetSecondsSinceLastAdvertisement() < InactiveAfterSeconds;
+            return GetSecondsSinceLastAdvertisement() >= InactiveAfterSeconds;
         }
         public void UpdateStatusColor()
         {
@@ -90,7 +90,8 @@ namespace BluetoothHeartrateModule
                 return;
             }
 
-            double fadeProgress = Math.Min(1f, GetSecondsSinceLastAdvertisement() / InactiveAfterSeconds);
+            // Clamp both ends, a clock adjustment can make the elapsed time negative and Convert.ToByte would throw
+            double fadeProgress = Math.Clamp(GetSecondsSinceLastAdvertisement() / InactiveAfterSeconds, 0d, 1d);
             var newBrush = new SolidColorBrush(Color.FromRgb(
                 Convert.ToByte(128 * fadeProgress),
                 Convert.ToByte(128 * fadeProgress),

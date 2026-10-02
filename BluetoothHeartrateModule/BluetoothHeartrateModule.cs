@@ -109,11 +109,9 @@ namespace BluetoothHeartrateModule
             await base.OnModuleStop();
             LogDebug("Stopping module");
             StopWatcher();
-            if (GetWebocketEnabledSetting())
-            {
-                LogDebug("Stopping wsServer");
-                _wsServer.Stop();
-            }
+            // Stop regardless of the current setting value, it may have been toggled while running
+            LogDebug("Stopping wsServer");
+            _wsServer.Stop();
             AppDomain.CurrentDomain.UnhandledException -= LogUnhandledException;
             TaskScheduler.UnobservedTaskException -= LogUnobservedTaskException;
             return true;
@@ -267,22 +265,29 @@ namespace BluetoothHeartrateModule
 
         private void Watcher_Stopped(BluetoothLEAdvertisementWatcher sender, BluetoothLEAdvertisementWatcherStoppedEventArgs args)
         {
-            string scanStatus = args.Error.ToString();
-            LogDebug($"Watcher stopped, error: {scanStatus}");
-            if (scanStatus == "RadioNotAvailable")
+            try
             {
-                DeviceDataManager.UpdateBluetoothAvailability(false);
+                string scanStatus = args.Error.ToString();
+                LogDebug($"Watcher stopped, error: {scanStatus}");
+                if (scanStatus == "RadioNotAvailable")
+                {
+                    DeviceDataManager.UpdateBluetoothAvailability(false);
+                }
+                var newConnectionStatus = DeviceDataManager.ConnectedDeviceMac != string.Empty
+                        ? DeviceDataManager.PossibleConnectionStates.Connected
+                        : DeviceDataManager.PossibleConnectionStates.Idle;
+                DeviceDataManager.UpdateConnestionStatus(newConnectionStatus);
+                if (DeviceDataManager.CurrentDevice == null)
+                {
+                    LogDebug("Invoking OnDisconnected action");
+                    DeviceDataManager.OnDisconnected?.Invoke();
+                }
+                DeviceDataManager.Refresh();
             }
-            var newConnectionStatus = DeviceDataManager.ConnectedDeviceMac != string.Empty
-                    ? DeviceDataManager.PossibleConnectionStates.Connected
-                    : DeviceDataManager.PossibleConnectionStates.Idle;
-            DeviceDataManager.UpdateConnestionStatus(newConnectionStatus);
-            if (DeviceDataManager.CurrentDevice == null)
+            catch (Exception ex)
             {
-                LogDebug("Invoking OnDisconnected action");
-                DeviceDataManager.OnDisconnected?.Invoke();
+                LogException("Failed to handle watcher stop", ex);
             }
-            DeviceDataManager.Refresh();
         }
 
         internal Task<bool> StartWatcher()
@@ -314,7 +319,14 @@ namespace BluetoothHeartrateModule
         internal void StopWatcher()
         {
             LogDebug("Stopping watcher");
-            Watcher?.Stop();
+            try
+            {
+                Watcher?.Stop();
+            }
+            catch (Exception ex)
+            {
+                LogException("Failed to stop watcher", ex);
+            }
         }
 
         internal enum BluetoothHeartrateSetting

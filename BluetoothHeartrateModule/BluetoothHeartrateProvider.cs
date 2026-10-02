@@ -12,6 +12,7 @@ namespace BluetoothHeartrateModule
         private readonly AsyncHelper _ah = module.Ah;
         public override bool IsConnected => _ddm.CurrentDevice != null && _ddm.HeartRateCharacteristic != null && _ddm.CurrentDevice.ConnectionStatus == BluetoothConnectionStatus.Connected;
         private int _scanAttempts;
+        private volatile bool _tornDown;
 
         public override async Task<bool> Initialise()
         {
@@ -27,18 +28,24 @@ namespace BluetoothHeartrateModule
                 return false;
             }
             _scanAttempts = 0;
+            _tornDown = false;
 
             return await StartWatcher();
         }
 
         private async Task<bool> StartWatcher(bool invokeDisconnect = true)
         {
+            // Unsubscribe first so repeated restarts never stack duplicate handlers
             if (module.Watcher != null)
             {
                 module.LogDebug("Registering watcher received handler");
+                module.Watcher.Received -= Watcher_Received;
                 module.Watcher.Received += Watcher_Received;
             }
             module.LogDebug("Registering characteristic change handler");
+            _ddm.OnHeartRateCharacteristicValueChange -= HandleHeartRateCharacteristicValueChange;
+            _ddm.OnConnected -= HandleConnected;
+            _ddm.OnDisconnected -= HandleDisconnected;
             _ddm.OnHeartRateCharacteristicValueChange += HandleHeartRateCharacteristicValueChange;
             _ddm.OnConnected += HandleConnected;
             _ddm.OnDisconnected += HandleDisconnected;
@@ -55,6 +62,7 @@ namespace BluetoothHeartrateModule
 
         public override Task Teardown()
         {
+            _tornDown = true;
             Reset();
             _scanAttempts = 0;
 
@@ -75,6 +83,10 @@ namespace BluetoothHeartrateModule
             module.LogDebug("Clearing connected device MAC");
             _ddm.ConnectedDeviceMac = string.Empty;
             _ddm.Refresh();
+            if (module.Watcher != null)
+            {
+                module.Watcher.Received -= Watcher_Received;
+            }
             _ddm.OnHeartRateCharacteristicValueChange -= HandleHeartRateCharacteristicValueChange;
             _ddm.OnConnected -= HandleConnected;
             _ddm.OnDisconnected -= HandleDisconnected;
@@ -298,6 +310,11 @@ namespace BluetoothHeartrateModule
             {
                 try
                 {
+                    if (_tornDown)
+                    {
+                        module.LogDebug("Provider was torn down, not restarting watcher");
+                        return;
+                    }
                     await StartWatcher();
                 }
                 catch (Exception ex)

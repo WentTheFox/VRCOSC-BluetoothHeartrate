@@ -7,9 +7,9 @@
 		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
 		<LangVersion>latestmajor</LangVersion>
 		<WindowsSdkPackageVersion>10.0.26100.56</WindowsSdkPackageVersion>
-		<Version>2.0.22.0</Version>
-		<AssemblyVersion>2.0.22.0</AssemblyVersion>
-		<FileVersion>2.0.22.0</FileVersion>
+		<Version>2.0.23.0</Version>
+		<AssemblyVersion>2.0.23.0</AssemblyVersion>
+		<FileVersion>2.0.23.0</FileVersion>
 		<Authors>WentTheFox</Authors>
 		<Product>Bluetooth Heartrate</Product>
 		<ApplicationIcon>logo\logo.ico</ApplicationIcon>
